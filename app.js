@@ -1,54 +1,1042 @@
-/* =========================================================
-   SUPABASE
-========================================================= */
-
 const SUPABASE_URL =
   "https://xmbabihlrguuqewgilfo.supabase.co";
 
 const SUPABASE_KEY =
   "sb_publishable_fOgnuaVOZB_4SWGgx1zd2g_QVY84nIH";
 
-const supabaseClient =
-  window.supabase.createClient(
-    SUPABASE_URL,
-    SUPABASE_KEY
-  );
+const client = supabase.createClient(
+  SUPABASE_URL,
+  SUPABASE_KEY
+);
 
-
-/* =========================================================
-   GLOBALS
-========================================================= */
 
 let currentUser = null;
 let currentProfile = null;
-
-let html5QrCode = null;
-let awbScanner = null;
-
-let reportData = [];
+let scanner = null;
+let latestShipment = null;
 
 
-/* =========================================================
-   START
-========================================================= */
+/* =========================
+   LOGIN
+========================= */
 
-document.addEventListener(
-  "DOMContentLoaded",
-  async () => {
+async function login() {
 
-    const {
-      data: {
-        session
-      }
-    } =
-      await supabaseClient.auth.getSession();
+  const email =
+    document.getElementById("email").value.trim();
 
-    if (session) {
+  const password =
+    document.getElementById("password").value;
 
-      currentUser =
-        session.user;
+  const message =
+    document.getElementById("loginMessage");
 
-      await loadProfile();
+  message.className = "message";
+  message.textContent = "Logging in...";
+
+  const { error } =
+    await client.auth.signInWithPassword({
+      email,
+      password
+    });
+
+  if (error) {
+
+    message.className = "message error";
+    message.textContent = error.message;
+
+    return;
+  }
+
+  await loadUser();
+
+}
+
+
+/* =========================
+   LOAD USER
+========================= */
+
+async function loadUser() {
+
+  const {
+    data: {
+      user
+    }
+  } = await client.auth.getUser();
+
+  if (!user) {
+
+    showLogin();
+
+    return;
+  }
+
+  currentUser = user;
+
+  const {
+    data: profile,
+    error
+  } = await client
+    .from("profiles")
+    .select("id, full_name, role, active")
+    .eq("id", user.id)
+    .single();
+
+  if (error || !profile) {
+
+    alert("Profile not found.");
+
+    await client.auth.signOut();
+
+    return;
+  }
+
+  if (!profile.active) {
+
+    alert("Your account is inactive.");
+
+    await client.auth.signOut();
+
+    return;
+  }
+
+  currentProfile = profile;
+
+  document.getElementById("userInfo").textContent =
+    `${profile.full_name || user.email} • ${profile.role}`;
+
+  showApp();
+
+  if (profile.role !== "admin") {
+
+    document.getElementById(
+      "createShipmentMenu"
+    ).classList.add("hidden");
+
+  }
+
+  showSection("dashboard");
+
+}
+
+
+/* =========================
+   APP / LOGIN VIEW
+========================= */
+
+function showLogin() {
+
+  document
+    .getElementById("loginPage")
+    .classList.remove("hidden");
+
+  document
+    .getElementById("appPage")
+    .classList.add("hidden");
+
+}
+
+
+function showApp() {
+
+  document
+    .getElementById("loginPage")
+    .classList.add("hidden");
+
+  document
+    .getElementById("appPage")
+    .classList.remove("hidden");
+
+}
+
+
+async function logout() {
+
+  await client.auth.signOut();
+
+  currentUser = null;
+  currentProfile = null;
+
+  showLogin();
+
+}
+
+
+/* =========================
+   NAVIGATION
+========================= */
+
+function showSection(id) {
+
+  document
+    .querySelectorAll(".section")
+    .forEach(section => {
+      section.classList.add("hidden");
+    });
+
+  const section =
+    document.getElementById(id);
+
+  if (section) {
+    section.classList.remove("hidden");
+  }
+
+  if (id === "dashboard")
+    loadDashboard();
+
+  if (id === "shipments")
+    loadShipments();
+
+  if (id === "packets")
+    loadPackets();
+
+  if (id === "reports")
+    loadReports();
+
+}
+
+
+/* =========================
+   CREATE SHIPMENT
+========================= */
+
+async function createShipment() {
+
+  if (currentProfile?.role !== "admin") {
+
+    showMessage(
+      "createMessage",
+      "Admin access required.",
+      false
+    );
+
+    return;
+  }
+
+  const customerName =
+    document
+      .getElementById("customerName")
+      .value
+      .trim();
+
+  if (!customerName) {
+
+    showMessage(
+      "createMessage",
+      "Enter customer name.",
+      false
+    );
+
+    return;
+  }
+
+  showMessage(
+    "createMessage",
+    "Creating shipment...",
+    true
+  );
+
+  const {
+    data,
+    error
+  } = await client.rpc(
+    "create_shipment",
+    {
+      p_customer_name: customerName
+    }
+  );
+
+  if (error) {
+
+    showMessage(
+      "createMessage",
+      error.message,
+      false
+    );
+
+    console.error(error);
+
+    return;
+  }
+
+  latestShipment = data;
+
+  document
+    .getElementById("createdShipment")
+    .classList.remove("hidden");
+
+  document.getElementById("newAwb").textContent =
+    data.awb_number;
+
+  document.getElementById("newPacket").textContent =
+    data.packet_id;
+
+  document.getElementById("newStatus").textContent =
+    data.status;
+
+  showMessage(
+    "createMessage",
+    "Shipment created successfully.",
+    true
+  );
+
+  document
+    .getElementById("customerName")
+    .value = "";
+
+  await loadDashboard();
+
+}
+
+
+/* =========================
+   SHIPMENTS
+========================= */
+
+async function loadShipments() {
+
+  const table =
+    document.getElementById("shipmentTable");
+
+  table.innerHTML =
+    "<tr><td colspan='5'>Loading...</td></tr>";
+
+  const {
+    data,
+    error
+  } = await client
+    .from("orders")
+    .select("*")
+    .order("created_at", {
+      ascending: false
+    });
+
+  if (error) {
+
+    table.innerHTML =
+      `<tr><td colspan="5">${escapeHtml(error.message)}</td></tr>`;
+
+    return;
+  }
+
+  if (!data.length) {
+
+    table.innerHTML =
+      "<tr><td colspan='5'>No shipments found.</td></tr>";
+
+    return;
+  }
+
+  table.innerHTML = data.map(order => {
+
+    return `
+      <tr>
+
+        <td>
+          <strong>${escapeHtml(order.awb_number)}</strong>
+        </td>
+
+        <td>
+          ${escapeHtml(order.customer_name || "-")}
+        </td>
+
+        <td>
+          <span class="status">
+            ${escapeHtml(order.status)}
+          </span>
+        </td>
+
+        <td>
+          ${formatDate(order.created_at)}
+        </td>
+
+        <td>
+
+          ${
+            currentProfile?.role === "admin"
+            ? `
+              <button onclick="changeStatus('${escapeAttribute(order.awb_number)}')">
+                Update
+              </button>
+            `
+            : ""
+          }
+
+        </td>
+
+      </tr>
+    `;
+
+  }).join("");
+
+}
+
+
+/* =========================
+   UPDATE STATUS
+========================= */
+
+async function changeStatus(awb) {
+
+  const status =
+    prompt(
+      "Enter status:\nready / packed / linked / dispatched / delivered / cancelled",
+      "packed"
+    );
+
+  if (!status) return;
+
+  const {
+    error
+  } = await client.rpc(
+    "update_shipment_status",
+    {
+      p_awb: awb,
+      p_status: status.trim().toLowerCase()
+    }
+  );
+
+  if (error) {
+
+    alert(error.message);
+
+    return;
+  }
+
+  alert("Shipment status updated.");
+
+  await loadShipments();
+  await loadDashboard();
+
+}
+
+
+/* =========================
+   PACKETS
+========================= */
+
+async function loadPackets() {
+
+  const table =
+    document.getElementById("packetTable");
+
+  table.innerHTML =
+    "<tr><td colspan='4'>Loading...</td></tr>";
+
+  const {
+    data,
+    error
+  } = await client
+    .from("packets")
+    .select("*")
+    .order("created_at", {
+      ascending: false
+    });
+
+  if (error) {
+
+    table.innerHTML =
+      `<tr><td colspan="4">${escapeHtml(error.message)}</td></tr>`;
+
+    return;
+  }
+
+  if (!data.length) {
+
+    table.innerHTML =
+      "<tr><td colspan='4'>No packets found.</td></tr>";
+
+    return;
+  }
+
+  table.innerHTML = data.map(packet => {
+
+    return `
+      <tr>
+
+        <td>
+          <strong>${escapeHtml(packet.packet_id)}</strong>
+        </td>
+
+        <td>
+          ${escapeHtml(packet.qr_value)}
+        </td>
+
+        <td>
+          <span class="status">
+            ${escapeHtml(packet.status)}
+          </span>
+        </td>
+
+        <td>
+          ${formatDate(packet.created_at)}
+        </td>
+
+      </tr>
+    `;
+
+  }).join("");
+
+}
+
+
+/* =========================
+   DASHBOARD
+========================= */
+
+async function loadDashboard() {
+
+  const {
+    data,
+    error
+  } = await client
+    .from("orders")
+    .select("awb_number, customer_name, status, created_at")
+    .order("created_at", {
+      ascending: false
+    });
+
+  if (error) {
+
+    console.error(error);
+
+    return;
+  }
+
+  document.getElementById("totalShipments")
+    .textContent = data.length;
+
+  document.getElementById("readyShipments")
+    .textContent =
+    data.filter(x => x.status === "ready").length;
+
+  document.getElementById("linkedShipments")
+    .textContent =
+    data.filter(x => x.status === "linked").length;
+
+  document.getElementById("deliveredShipments")
+    .textContent =
+    data.filter(x => x.status === "delivered").length;
+
+
+  const recent =
+    document.getElementById("recentShipments");
+
+  const rows =
+    data.slice(0, 10);
+
+  if (!rows.length) {
+
+    recent.innerHTML =
+      "<p>No shipments yet.</p>";
+
+    return;
+  }
+
+  recent.innerHTML = `
+    <div class="table-container">
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>AWB</th>
+            <th>Customer</th>
+            <th>Status</th>
+          </tr>
+
+        </thead>
+
+        <tbody>
+
+          ${rows.map(x => `
+            <tr>
+
+              <td>
+                ${escapeHtml(x.awb_number)}
+              </td>
+
+              <td>
+                ${escapeHtml(x.customer_name || "-")}
+              </td>
+
+              <td>
+                <span class="status">
+                  ${escapeHtml(x.status)}
+                </span>
+              </td>
+
+            </tr>
+          `).join("")}
+
+        </tbody>
+
+      </table>
+
+    </div>
+  `;
+
+}
+
+
+/* =========================
+   SCANNER
+========================= */
+
+async function startScanner() {
+
+  if (scanner) {
+
+    try {
+      await scanner.stop();
+    } catch {}
+
+    scanner = null;
+  }
+
+  scanner =
+    new Html5Qrcode("reader");
+
+  const formats = [
+
+    Html5QrcodeSupportedFormats.QR_CODE,
+
+    Html5QrcodeSupportedFormats.CODE_128,
+
+    Html5QrcodeSupportedFormats.CODE_39,
+
+    Html5QrcodeSupportedFormats.EAN_13,
+
+    Html5QrcodeSupportedFormats.EAN_8
+
+  ];
+
+
+  try {
+
+    await scanner.start(
+
+      {
+        facingMode: "environment"
+      },
+
+      {
+        fps: 10,
+
+        qrbox: {
+          width: 280,
+          height: 180
+        },
+
+        formatsToSupport: formats
+
+      },
+
+      decodedText => {
+
+        handleScan(decodedText);
+
+      },
+
+      () => {}
+
+    );
+
+  } catch (error) {
+
+    document.getElementById(
+      "scanResult"
+    ).textContent =
+      "Camera error: " + error;
+
+  }
+
+}
+
+
+function handleScan(value) {
+
+  value =
+    value.trim();
+
+  if (value.startsWith("AWB-")) {
+
+    document.getElementById(
+      "scanAwb"
+    ).value = value;
+
+    showMessage(
+      "scanResult",
+      "AWB scanned: " + value,
+      true
+    );
+
+    return;
+  }
+
+
+  if (value.startsWith("PKT-")) {
+
+    document.getElementById(
+      "scanPacket"
+    ).value = value;
+
+    showMessage(
+      "scanResult",
+      "Packet scanned: " + value,
+      true
+    );
+
+    return;
+  }
+
+}
+
+
+/* =========================
+   VERIFY & LINK
+========================= */
+
+async function verifyAndLink() {
+
+  const awb =
+    document
+      .getElementById("scanAwb")
+      .value
+      .trim();
+
+  const packet =
+    document
+      .getElementById("scanPacket")
+      .value
+      .trim();
+
+  if (!awb || !packet) {
+
+    showMessage(
+      "scanResult",
+      "Scan both AWB and Packet ID.",
+      false
+    );
+
+    return;
+  }
+
+
+  showMessage(
+    "scanResult",
+    "Verifying...",
+    true
+  );
+
+
+  const {
+    data,
+    error
+  } = await client.rpc(
+    "link_packet",
+    {
+      p_awb: awb,
+      p_packet: packet
+    }
+  );
+
+
+  if (error) {
+
+    showMessage(
+      "scanResult",
+      error.message,
+      false
+    );
+
+    return;
+  }
+
+
+  showMessage(
+    "scanResult",
+    `✓ Linked ${data.awb_number} ↔ ${data.packet_id}`,
+    true
+  );
+
+
+  document.getElementById(
+    "scanAwb"
+  ).value = "";
+
+  document.getElementById(
+    "scanPacket"
+  ).value = "";
+
+  await loadDashboard();
+
+}
+
+
+/* =========================
+   TRACKING
+========================= */
+
+async function trackShipment() {
+
+  const awb =
+    document
+      .getElementById("trackingAwb")
+      .value
+      .trim();
+
+  const result =
+    document.getElementById(
+      "trackingResult"
+    );
+
+
+  if (!awb) {
+
+    result.innerHTML =
+      "<div class='card'>Enter an AWB number.</div>";
+
+    return;
+  }
+
+
+  const {
+    data,
+    error
+  } = await client
+    .from("orders")
+    .select("*")
+    .eq("awb_number", awb)
+    .maybeSingle();
+
+
+  if (error) {
+
+    result.innerHTML =
+      `<div class="card error">${escapeHtml(error.message)}</div>`;
+
+    return;
+  }
+
+
+  if (!data) {
+
+    result.innerHTML =
+      "<div class='card'>AWB not found.</div>";
+
+    return;
+  }
+
+
+  const {
+    data: link
+  } = await client
+    .from("packet_scans")
+    .select("packet_id, status, scanned_at")
+    .eq("awb_number", awb)
+    .maybeSingle();
+
+
+  result.innerHTML = `
+
+    <div class="card">
+
+      <h2>Shipment Details</h2>
+
+      <p>
+        <strong>AWB:</strong>
+        ${escapeHtml(data.awb_number)}
+      </p>
+
+      <p>
+        <strong>Customer:</strong>
+        ${escapeHtml(data.customer_name || "-")}
+      </p>
+
+      <p>
+        <strong>Status:</strong>
+        ${escapeHtml(data.status)}
+      </p>
+
+      <p>
+        <strong>Packet:</strong>
+        ${escapeHtml(link?.packet_id || "Not linked")}
+      </p>
+
+      <p>
+        <strong>Created:</strong>
+        ${formatDate(data.created_at)}
+      </p>
+
+    </div>
+
+  `;
+
+}
+
+
+/* =========================
+   REPORTS
+========================= */
+
+async function loadReports() {
+
+  const {
+    data,
+    error
+  } = await client
+    .from("orders")
+    .select("status");
+
+  if (error) return;
+
+  const count =
+    status =>
+      data.filter(
+        x => x.status === status
+      ).length;
+
+  document.getElementById("reportReady")
+    .textContent = count("ready");
+
+  document.getElementById("reportPacked")
+    .textContent = count("packed");
+
+  document.getElementById("reportDispatched")
+    .textContent = count("dispatched");
+
+  document.getElementById("reportDelivered")
+    .textContent = count("delivered");
+
+}
+
+
+/* =========================
+   LABEL
+========================= */
+
+function generateLabel() {
+
+  if (!latestShipment) {
+
+    alert("Create a shipment first.");
+
+    return;
+  }
+
+
+  document.getElementById(
+    "labelAwb"
+  ).textContent =
+    latestShipment.awb_number;
+
+
+  document.getElementById(
+    "labelPacket"
+  ).textContent =
+    latestShipment.packet_id;
+
+
+  document.getElementById(
+    "qrcode"
+  ).innerHTML = "";
+
+
+  new QRCode(
+    document.getElementById("qrcode"),
+    {
+      text: latestShipment.packet_id,
+      width: 150,
+      height: 150
+    }
+  );
+
+
+  JsBarcode(
+    "#barcode",
+    latestShipment.awb_number,
+    {
+      format: "CODE128",
+      width: 2,
+      height: 65,
+      displayValue: true,
+      margin: 10
+    }
+  );
+
+
+  showSection("labelSection");
+
+}
+
+
+/* =========================
+   HELPERS
+========================= */
+
+function showMessage(
+  id,
+  message,
+  success
+) {
+
+  const element =
+    document.getElementById(id);
+
+  element.textContent =
+    message;
+
+  element.className =
+    success
+      ? "message success"
+      : "message error";
+
+}
+
+
+function formatDate(date) {
+
+  if (!date) return "-";
+
+  return new Date(date)
+    .toLocaleString();
+}
+
+
+function escapeHtml(value) {
+
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+
+}
+
+
+function escapeAttribute(value) {
+
+  return String(value ?? "")
+    .replaceAll("\\", "\\\\")
+    .replaceAll("'", "\\'");
+
+}
+
+
+/* =========================
+   STARTUP
+========================= */
+
+client.auth.onAuthStateChange(
+  async (event, session) => {
+
+    if (session?.user) {
+
+      await loadUser();
 
     } else {
 
@@ -60,1097 +1048,22 @@ document.addEventListener(
 );
 
 
-/* =========================================================
-   AUTH
-========================================================= */
-
-async function login() {
-
-  const email =
-    document
-      .getElementById("email")
-      .value
-      .trim();
-
-  const password =
-    document
-      .getElementById("password")
-      .value;
-
-  if (!email || !password) {
-
-    showMessage(
-      "loginMsg",
-      "Enter email and password.",
-      "error"
-    );
-
-    return;
-  }
-
+(async function () {
 
   const {
-    data,
-    error
-  } =
-    await supabaseClient.auth.signInWithPassword({
-      email,
-      password
-    });
+    data: {
+      session
+    }
+  } = await client.auth.getSession();
 
+  if (session?.user) {
 
-  if (error) {
+    await loadUser();
 
-    showMessage(
-      "loginMsg",
-      "❌ " + error.message,
-      "error"
-    );
-
-    return;
-  }
-
-
-  currentUser =
-    data.user;
-
-  await loadProfile();
-}
-
-
-async function logout() {
-
-  stopScanner();
-  stopAWBScanner();
-
-  await supabaseClient.auth.signOut();
-
-  currentUser = null;
-  currentProfile = null;
-
-  showLogin();
-}
-
-
-function showLogin() {
-
-  document
-    .getElementById("loginView")
-    .classList.remove("hidden");
-
-  document
-    .getElementById("appView")
-    .classList.add("hidden");
-}
-
-
-function showApp() {
-
-  document
-    .getElementById("loginView")
-    .classList.add("hidden");
-
-  document
-    .getElementById("appView")
-    .classList.remove("hidden");
-}
-
-
-/* =========================================================
-   PROFILE
-========================================================= */
-
-async function loadProfile() {
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .from("profiles")
-      .select("*")
-      .eq("id", currentUser.id)
-      .maybeSingle();
-
-
-  if (error || !data) {
-
-    alert(
-      "Your account has no profile. Contact administrator."
-    );
-
-    await supabaseClient.auth.signOut();
+  } else {
 
     showLogin();
 
-    return;
   }
 
-
-  currentProfile = data;
-
-  document
-    .getElementById("staffName")
-    .textContent =
-      `${data.full_name || "User"} • ${data.role}`;
-
-
-  applyRolePermissions();
-
-  showApp();
-}
-
-
-function applyRolePermissions() {
-
-  const admin =
-    currentProfile &&
-    currentProfile.role === "admin";
-
-
-  document
-    .querySelectorAll(".admin-only")
-    .forEach(element => {
-
-      if (admin) {
-
-        element.classList.remove("hidden");
-
-      } else {
-
-        element.classList.add("hidden");
-
-      }
-
-    });
-}
-
-
-/* =========================================================
-   TABS
-========================================================= */
-
-function showTab(tabName) {
-
-  if (
-    ["dashboard", "reports", "labels"]
-      .includes(tabName)
-    &&
-    currentProfile?.role !== "admin"
-  ) {
-
-    alert("Admin access required.");
-
-    return;
-  }
-
-
-  document
-    .querySelectorAll(".tab")
-    .forEach(section =>
-      section.classList.add("hidden")
-    );
-
-
-  const section =
-    document.getElementById(tabName);
-
-  if (section) {
-
-    section.classList.remove("hidden");
-
-  }
-
-
-  if (tabName === "history") {
-    loadMyScans();
-  }
-
-
-  if (tabName === "dashboard") {
-    loadDashboard();
-  }
-
-
-  if (tabName === "reports") {
-    loadReports();
-  }
-
-}
-
-
-/* =========================================================
-   QR SCANNER
-========================================================= */
-
-function startScanner() {
-
-  if (html5QrCode) {
-    return;
-  }
-
-
-  html5QrCode =
-    new Html5Qrcode("reader");
-
-
-  html5QrCode.start(
-
-    {
-      facingMode: "environment"
-    },
-
-    {
-      fps: 10,
-
-      qrbox: {
-        width: 250,
-        height: 250
-      },
-
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.QR_CODE
-      ]
-    },
-
-    function(decodedText) {
-
-      document
-        .getElementById("packet")
-        .value = decodedText;
-
-
-      showMessage(
-        "scanMsg",
-        "✅ Packet QR scanned: " + decodedText,
-        "success"
-      );
-
-
-      stopScanner();
-
-    },
-
-    function() {}
-
-  )
-  .catch(function(error) {
-
-    showMessage(
-      "scanMsg",
-      "❌ Camera error: " + error,
-      "error"
-    );
-
-  });
-}
-
-
-function stopScanner() {
-
-  if (!html5QrCode) {
-    return;
-  }
-
-
-  html5QrCode
-    .stop()
-    .then(() => {
-
-      html5QrCode.clear();
-
-      html5QrCode = null;
-
-    })
-    .catch(error => {
-
-      console.log(error);
-
-      html5QrCode = null;
-
-    });
-
-}
-
-
-/* =========================================================
-   AWB BARCODE SCANNER
-========================================================= */
-
-function startAWBScanner() {
-
-  if (awbScanner) {
-    return;
-  }
-
-
-  awbScanner =
-    new Html5Qrcode("awbReader");
-
-
-  awbScanner.start(
-
-    {
-      facingMode: "environment"
-    },
-
-    {
-      fps: 10,
-
-      qrbox: {
-        width: 300,
-        height: 120
-      },
-
-      formatsToSupport: [
-        Html5QrcodeSupportedFormats.CODE_128,
-        Html5QrcodeSupportedFormats.CODE_39,
-        Html5QrcodeSupportedFormats.EAN_13,
-        Html5QrcodeSupportedFormats.EAN_8
-      ]
-    },
-
-    function(decodedText) {
-
-      document
-        .getElementById("awb")
-        .value = decodedText;
-
-
-      showMessage(
-        "scanMsg",
-        "✅ AWB barcode scanned: " + decodedText,
-        "success"
-      );
-
-
-      stopAWBScanner();
-
-    },
-
-    function() {}
-
-  )
-  .catch(function(error) {
-
-    showMessage(
-      "scanMsg",
-      "❌ Unable to start AWB scanner.",
-      "error"
-    );
-
-  });
-}
-
-
-function stopAWBScanner() {
-
-  if (!awbScanner) {
-    return;
-  }
-
-
-  awbScanner
-    .stop()
-    .then(() => {
-
-      awbScanner.clear();
-
-      awbScanner = null;
-
-    })
-    .catch(error => {
-
-      console.log(error);
-
-      awbScanner = null;
-
-    });
-
-}
-
-
-/* =========================================================
-   SECURE VERIFY + LINK
-========================================================= */
-
-async function verifyAndLink() {
-
-  const awb =
-    document
-      .getElementById("awb")
-      .value
-      .trim();
-
-
-  const packet =
-    document
-      .getElementById("packet")
-      .value
-      .trim();
-
-
-  if (!awb || !packet) {
-
-    showMessage(
-      "scanMsg",
-      "⚠️ Scan both AWB and Packet.",
-      "error"
-    );
-
-    return;
-  }
-
-
-  showMessage(
-    "scanMsg",
-    "🔎 Verifying...",
-    "info"
-  );
-
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .rpc(
-        "link_packet",
-        {
-          p_awb: awb,
-          p_packet: packet
-        }
-      );
-
-
-  if (error) {
-
-    let message =
-      error.message || "Verification failed.";
-
-
-    if (message.includes("AWB_NOT_FOUND")) {
-
-      message =
-        "❌ AWB not found.";
-
-    }
-
-    else if (
-      message.includes("PACKET_NOT_FOUND")
-    ) {
-
-      message =
-        "❌ Packet not found.";
-
-    }
-
-    else if (
-      message.includes("PACKET_ALREADY_LINKED")
-    ) {
-
-      message =
-        "❌ Packet is already linked.";
-
-    }
-
-    else if (
-      message.includes("AWB_ALREADY_LINKED")
-    ) {
-
-      message =
-        "❌ AWB is already linked.";
-
-    }
-
-    else if (
-      message.includes("LOGIN_REQUIRED")
-    ) {
-
-      message =
-        "❌ Please login again.";
-
-    }
-
-
-    showMessage(
-      "scanMsg",
-      message,
-      "error"
-    );
-
-    return;
-  }
-
-
-  showMessage(
-    "scanMsg",
-    "✅ VERIFIED & LINKED SUCCESSFULLY",
-    "success"
-  );
-
-
-  document
-    .getElementById("awb")
-    .value = "";
-
-
-  document
-    .getElementById("packet")
-    .value = "";
-
-
-  loadMyScans();
-}
-
-
-/* =========================================================
-   MY SCANS
-========================================================= */
-
-async function loadMyScans() {
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .from("packet_scans")
-      .select("*")
-      .eq("scanned_by", currentUser.id)
-      .order(
-        "scanned_at",
-        {
-          ascending: false
-        }
-      )
-      .limit(100);
-
-
-  const body =
-    document.getElementById("historyBody");
-
-
-  if (error) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="4">
-          ${error.message}
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  if (!data || data.length === 0) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="4">
-          No scans yet.
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  body.innerHTML =
-    data.map(row => `
-
-      <tr>
-
-        <td>
-          ${escapeHtml(row.awb_number)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.packet_id)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.status)}
-        </td>
-
-        <td>
-          ${new Date(
-            row.scanned_at
-          ).toLocaleString()}
-        </td>
-
-      </tr>
-
-    `).join("");
-}
-
-
-/* =========================================================
-   ADMIN DASHBOARD
-========================================================= */
-
-async function loadDashboard() {
-
-  if (currentProfile?.role !== "admin") {
-    return;
-  }
-
-
-  const orders =
-    await supabaseClient
-      .from("orders")
-      .select("*", {
-        count: "exact",
-        head: true
-      });
-
-
-  const packets =
-    await supabaseClient
-      .from("packets")
-      .select("*", {
-        count: "exact",
-        head: true
-      });
-
-
-  const linked =
-    await supabaseClient
-      .from("packets")
-      .select("*", {
-        count: "exact",
-        head: true
-      })
-      .eq("status", "linked");
-
-
-  const available =
-    await supabaseClient
-      .from("packets")
-      .select("*", {
-        count: "exact",
-        head: true
-      })
-      .eq("status", "available");
-
-
-  const scans =
-    await supabaseClient
-      .from("packet_scans")
-      .select("*", {
-        count: "exact",
-        head: true
-      });
-
-
-  document
-    .getElementById("totalOrders")
-    .textContent =
-      orders.count || 0;
-
-
-  document
-    .getElementById("totalPackets")
-    .textContent =
-      packets.count || 0;
-
-
-  document
-    .getElementById("linkedPackets")
-    .textContent =
-      linked.count || 0;
-
-
-  document
-    .getElementById("availablePackets")
-    .textContent =
-      available.count || 0;
-
-
-  document
-    .getElementById("totalScans")
-    .textContent =
-      scans.count || 0;
-
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .from("packet_scans")
-      .select("*")
-      .order(
-        "scanned_at",
-        {
-          ascending: false
-        }
-      )
-      .limit(20);
-
-
-  const body =
-    document.getElementById("dashboardBody");
-
-
-  if (error) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="5">
-          ${error.message}
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  if (!data || data.length === 0) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="5">
-          No scans.
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  body.innerHTML =
-    data.map(row => `
-
-      <tr>
-
-        <td>
-          ${escapeHtml(row.awb_number)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.packet_id)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.status)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.scanned_by || "-")}
-        </td>
-
-        <td>
-          ${new Date(
-            row.scanned_at
-          ).toLocaleString()}
-        </td>
-
-      </tr>
-
-    `).join("");
-}
-
-
-/* =========================================================
-   REPORTS
-========================================================= */
-
-async function loadReports() {
-
-  if (currentProfile?.role !== "admin") {
-    return;
-  }
-
-
-  const {
-    data,
-    error
-  } =
-    await supabaseClient
-      .from("packet_scans")
-      .select("*")
-      .order(
-        "scanned_at",
-        {
-          ascending: false
-        }
-      );
-
-
-  const body =
-    document.getElementById("reportsBody");
-
-
-  if (error) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="5">
-          ${error.message}
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  reportData =
-    data || [];
-
-
-  if (!reportData.length) {
-
-    body.innerHTML = `
-      <tr>
-        <td colspan="5">
-          No reports.
-        </td>
-      </tr>
-    `;
-
-    return;
-  }
-
-
-  body.innerHTML =
-    reportData.map(row => `
-
-      <tr>
-
-        <td>
-          ${escapeHtml(row.awb_number)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.packet_id)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.status)}
-        </td>
-
-        <td>
-          ${escapeHtml(row.scanned_by || "-")}
-        </td>
-
-        <td>
-          ${new Date(
-            row.scanned_at
-          ).toLocaleString()}
-        </td>
-
-      </tr>
-
-    `).join("");
-}
-
-
-/* =========================================================
-   CSV
-========================================================= */
-
-function exportCSV() {
-
-  if (!reportData.length) {
-
-    alert("No report data.");
-
-    return;
-  }
-
-
-  const headers = [
-    "AWB",
-    "Packet ID",
-    "Status",
-    "Staff ID",
-    "Scanned At"
-  ];
-
-
-  const rows =
-    reportData.map(row => [
-
-      row.awb_number,
-      row.packet_id,
-      row.status,
-      row.scanned_by || "",
-      row.scanned_at
-
-    ]);
-
-
-  const csv =
-    [
-      headers,
-      ...rows
-    ]
-      .map(row =>
-        row.map(value =>
-          `"${String(value)
-            .replace(/"/g, '""')}"`
-        ).join(",")
-      )
-      .join("\n");
-
-
-  const blob =
-    new Blob(
-      [csv],
-      {
-        type: "text/csv;charset=utf-8;"
-      }
-    );
-
-
-  const url =
-    URL.createObjectURL(blob);
-
-
-  const link =
-    document.createElement("a");
-
-
-  link.href = url;
-
-  link.download =
-    "packet-scan-report.csv";
-
-
-  document.body.appendChild(link);
-
-  link.click();
-
-  link.remove();
-
-
-  URL.revokeObjectURL(url);
-}
-
-
-/* =========================================================
-   LABEL GENERATOR
-========================================================= */
-
-function generateLabel() {
-
-  const awb =
-    document
-      .getElementById("labelAwb")
-      .value
-      .trim();
-
-
-  const packet =
-    document
-      .getElementById("labelPacket")
-      .value
-      .trim();
-
-
-  if (!awb || !packet) {
-
-    alert(
-      "Enter AWB and Packet ID."
-    );
-
-    return;
-  }
-
-
-  document
-    .getElementById("labelAwbText")
-    .textContent = awb;
-
-
-  document
-    .getElementById("labelPacketText")
-    .textContent = packet;
-
-
-  const qrBox =
-    document.getElementById("qrcode");
-
-
-  qrBox.innerHTML = "";
-
-
-  new QRCode(
-    qrBox,
-    {
-      text: packet,
-      width: 160,
-      height: 160
-    }
-  );
-
-
-  JsBarcode(
-    "#awbBarcode",
-    awb,
-    {
-      format: "CODE128",
-      width: 2,
-      height: 70,
-      displayValue: true
-    }
-  );
-}
-
-
-/* =========================================================
-   MESSAGE
-========================================================= */
-
-function showMessage(
-  elementId,
-  message,
-  type
-) {
-
-  const element =
-    document.getElementById(elementId);
-
-
-  if (!element) {
-    return;
-  }
-
-
-  element.textContent =
-    message;
-
-
-  element.style.background =
-    type === "success"
-      ? "#dcfce7"
-      : type === "info"
-      ? "#dbeafe"
-      : "#fee2e2";
-
-
-  element.style.color =
-    "#111827";
-}
-
-
-/* =========================================================
-   HTML SAFETY
-========================================================= */
-
-function escapeHtml(value) {
-
-  return String(value)
-    .replaceAll("&", "&amp;")
-    .replaceAll("<", "&lt;")
-    .replaceAll(">", "&gt;")
-    .replaceAll('"', "&quot;")
-    .replaceAll("'", "&#039;");
-    }
+})();
