@@ -3,169 +3,568 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
 <title>Barcoded Packet System</title>
+
 <link rel="stylesheet" href="style.css">
+
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://unpkg.com/html5-qrcode" type="text/javascript"></script>
+
+<script src="https://unpkg.com/html5-qrcode"
+        type="text/javascript"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
 <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
 </head>
+
 <body>
 
 <div id="loginPage" class="page">
+
   <div class="login-card">
+
     <h1>📦 Packet System</h1>
-    <p class="muted">Secure Barcoded Shipment Management</p>
-    <input id="email" type="email" placeholder="Email" autocomplete="email">
-    <input id="password" type="password" placeholder="Password" autocomplete="current-password">
+
+    <p class="muted">
+      Secure Barcoded Shipment Management
+    </p>
+
+    <input
+      id="email"
+      type="email"
+      placeholder="Email"
+      autocomplete="email"
+    >
+
+    <input
+      id="password"
+      type="password"
+      placeholder="Password"
+      autocomplete="current-password"
+    >
+
     <button onclick="login()">Login</button>
+
     <p id="loginMessage" class="message"></p>
+
   </div>
+
 </div>
 
+
 <div id="appPage" class="hidden">
+
 <header class="topbar">
+
   <div>
+
     <h2>📦 Barcoded Packet System</h2>
+
     <span id="userInfo"></span>
+
   </div>
-  <button class="logout-btn" onclick="logout()">Logout</button>
+
+  <button
+    class="logout-btn"
+    onclick="logout()"
+  >
+    Logout
+  </button>
+
 </header>
 
+
 <div class="layout">
+
+
 <aside class="sidebar">
-  <button onclick="showSection('dashboard')">🏠 Dashboard</button>
-  <button id="createShipmentMenu" onclick="showSection('createShipment')">➕ Create Shipment</button>
-  <button onclick="showSection('shipments')">📦 Shipments</button>
-  <button onclick="showSection('packets')">🏷️ Packets</button>
-  <button onclick="showSection('scanner')">📷 Scan & Link</button>
-  <button onclick="showSection('tracking')">🔎 Tracking</button>
-  <button onclick="showSection('reports')">📊 Reports</button>
+
+  <button onclick="showSection('dashboard')">
+    🏠 Dashboard
+  </button>
+
+  <button
+    id="createShipmentMenu"
+    onclick="showSection('createShipment')"
+  >
+    ➕ Create Shipment
+  </button>
+
+  <button onclick="showSection('shipments')">
+    📦 Shipments
+  </button>
+
+  <button onclick="showSection('packets')">
+    🏷️ Packets
+  </button>
+
+  <button onclick="showSection('scanner')">
+    📷 Scan & Link
+  </button>
+
+  <button onclick="showSection('tracking')">
+    🔎 Tracking
+  </button>
+
+  <button onclick="showSection('reports')">
+    📊 Reports
+  </button>
+
 </aside>
+
 
 <main class="content">
 
+
+<!-- DASHBOARD -->
+
 <section id="dashboard" class="section">
+
   <div class="section-header">
-    <div><h1>Dashboard</h1><p>Shipment and packet overview</p></div>
-    <button onclick="loadDashboard()">↻ Refresh</button>
+
+    <div>
+
+      <h1>Dashboard</h1>
+
+      <p>Shipment and packet overview</p>
+
+    </div>
+
+    <button onclick="loadDashboard()">
+      ↻ Refresh
+    </button>
+
   </div>
+
+
   <div class="stats">
-    <div class="stat-card"><span>Total Shipments</span><strong id="totalShipments">0</strong></div>
-    <div class="stat-card"><span>Ready</span><strong id="readyShipments">0</strong></div>
-    <div class="stat-card"><span>Linked</span><strong id="linkedShipments">0</strong></div>
-    <div class="stat-card"><span>Delivered</span><strong id="deliveredShipments">0</strong></div>
+
+    <div class="stat-card">
+      <span>Total Shipments</span>
+      <strong id="totalShipments">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Ready</span>
+      <strong id="readyShipments">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Linked</span>
+      <strong id="linkedShipments">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Delivered</span>
+      <strong id="deliveredShipments">0</strong>
+    </div>
+
   </div>
-  <div class="card"><h2>Recent Shipments</h2><div id="recentShipments">Loading...</div></div>
+
+
+  <div class="card">
+
+    <h2>Recent Shipments</h2>
+
+    <div id="recentShipments">
+      Loading...
+    </div>
+
+  </div>
+
 </section>
+
+
+<!-- CREATE SHIPMENT -->
 
 <section id="createShipment" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Create Shipment</h1><p>Generate AWB, Packet ID and customer tracking QR</p></div>
-  </div>
-  <div class="card form-card">
-    <label>Customer Name</label>
-    <input id="customerName" type="text" placeholder="Enter customer name">
-    <button onclick="createShipment()">Create Shipment</button>
-    <div id="createMessage" class="message"></div>
-  </div>
-  <div id="createdShipment" class="card hidden">
-    <h2>Shipment Created</h2>
-    <div class="result-grid">
-      <div><span>AWB Number</span><strong id="newAwb"></strong></div>
-      <div><span>Packet ID</span><strong id="newPacket"></strong></div>
-      <div><span>Tracking Code</span><strong id="newTracking"></strong></div>
-      <div><span>Status</span><strong id="newStatus">ready</strong></div>
+
+    <div>
+
+      <h1>Create Shipment</h1>
+
+      <p>
+        Generate AWB, Packet ID and customer tracking QR
+      </p>
+
     </div>
-    <button onclick="generateLabel()">🖨️ Generate & Print Label</button>
+
   </div>
+
+
+  <div class="card form-card">
+
+    <label>Customer Name</label>
+
+    <input
+      id="customerName"
+      type="text"
+      placeholder="Enter customer name"
+    >
+
+    <button onclick="createShipment()">
+      Create Shipment
+    </button>
+
+    <div
+      id="createMessage"
+      class="message"
+    ></div>
+
+  </div>
+
+
+  <div
+    id="createdShipment"
+    class="card hidden"
+  >
+
+    <h2>Shipment Created</h2>
+
+    <div class="result-grid">
+
+      <div>
+        <span>AWB Number</span>
+        <strong id="newAwb"></strong>
+      </div>
+
+      <div>
+        <span>Packet ID</span>
+        <strong id="newPacket"></strong>
+      </div>
+
+      <div>
+        <span>Tracking Code</span>
+        <strong id="newTracking"></strong>
+      </div>
+
+      <div>
+        <span>Status</span>
+        <strong id="newStatus">ready</strong>
+      </div>
+
+    </div>
+
+
+    <button onclick="generateLabel()">
+      🖨️ Generate & Print Label
+    </button>
+
+  </div>
+
 </section>
+
+
+<!-- SHIPMENTS -->
 
 <section id="shipments" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Shipments</h1><p>All registered shipments</p></div>
-    <button onclick="loadShipments()">↻ Refresh</button>
+
+    <div>
+
+      <h1>Shipments</h1>
+
+      <p>All registered shipments</p>
+
+    </div>
+
+    <button onclick="loadShipments()">
+      ↻ Refresh
+    </button>
+
   </div>
+
+
   <div class="card table-container">
+
     <table>
-      <thead><tr><th>AWB</th><th>Customer</th><th>Status</th><th>Created</th><th>Action</th></tr></thead>
+
+      <thead>
+
+        <tr>
+
+          <th>AWB</th>
+          <th>Customer</th>
+          <th>Status</th>
+          <th>Created</th>
+          <th>Action</th>
+
+        </tr>
+
+      </thead>
+
       <tbody id="shipmentTable"></tbody>
+
     </table>
+
   </div>
+
 </section>
+
+
+<!-- PACKETS -->
 
 <section id="packets" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Packets</h1><p>Physical packet records</p></div>
-    <button onclick="loadPackets()">↻ Refresh</button>
+
+    <div>
+
+      <h1>Packets</h1>
+
+      <p>Physical packet records</p>
+
+    </div>
+
+    <button onclick="loadPackets()">
+      ↻ Refresh
+    </button>
+
   </div>
+
+
   <div class="card table-container">
+
     <table>
-      <thead><tr><th>Packet ID</th><th>QR Value</th><th>Status</th><th>Created</th></tr></thead>
+
+      <thead>
+
+        <tr>
+
+          <th>Packet ID</th>
+          <th>QR Value</th>
+          <th>Status</th>
+          <th>Created</th>
+
+        </tr>
+
+      </thead>
+
       <tbody id="packetTable"></tbody>
+
     </table>
+
   </div>
+
 </section>
+
+
+<!-- SCANNER -->
 
 <section id="scanner" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Scan & Link</h1><p>Scan AWB barcode and Packet QR</p></div>
+
+    <div>
+
+      <h1>Scan & Link</h1>
+
+      <p>
+        Scan AWB barcode and Packet QR
+      </p>
+
+    </div>
+
   </div>
+
+
   <div class="card">
+
     <label>AWB Number</label>
-    <input id="scanAwb" placeholder="Scan or enter AWB">
+
+    <input
+      id="scanAwb"
+      placeholder="Scan or enter AWB"
+    >
+
+
     <label>Packet ID</label>
-    <input id="scanPacket" placeholder="Scan or enter Packet ID">
-    <button onclick="startScanner()">📷 Start Camera Scanner</button>
-    <button onclick="verifyAndLink()">🔗 Verify & Link</button>
-    <div id="scanResult" class="message"></div>
+
+    <input
+      id="scanPacket"
+      placeholder="Scan or enter Packet ID"
+    >
+
+
+    <button onclick="startScanner()">
+      📷 Start Camera Scanner
+    </button>
+
+    <button onclick="verifyAndLink()">
+      🔗 Verify & Link
+    </button>
+
+
+    <div
+      id="scanResult"
+      class="message"
+    ></div>
+
   </div>
-  <div class="card"><div id="reader"></div></div>
+
+
+  <div class="card">
+
+    <div id="reader"></div>
+
+  </div>
+
 </section>
+
+
+<!-- TRACKING -->
 
 <section id="tracking" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Shipment Tracking</h1><p>Internal tracking by customer tracking code</p></div>
+
+    <div>
+
+      <h1>Shipment Tracking</h1>
+
+      <p>
+        Internal tracking by customer tracking code
+      </p>
+
+    </div>
+
   </div>
+
+
   <div class="card">
-    <input id="trackingCode" placeholder="Enter tracking code">
-    <button onclick="trackShipment()">Search</button>
+
+    <input
+      id="trackingCode"
+      placeholder="Enter tracking code"
+    >
+
+    <button onclick="trackShipment()">
+      Search
+    </button>
+
   </div>
+
+
   <div id="trackingResult"></div>
+
 </section>
+
+
+<!-- REPORTS -->
 
 <section id="reports" class="section hidden">
+
   <div class="section-header">
-    <div><h1>Reports</h1><p>Shipment status summary</p></div>
-    <button onclick="loadReports()">↻ Refresh</button>
+
+    <div>
+
+      <h1>Reports</h1>
+
+      <p>Shipment status summary</p>
+
+    </div>
+
+    <button onclick="loadReports()">
+      ↻ Refresh
+    </button>
+
   </div>
+
+
   <div class="stats">
-    <div class="stat-card"><span>Ready</span><strong id="reportReady">0</strong></div>
-    <div class="stat-card"><span>Packed</span><strong id="reportPacked">0</strong></div>
-    <div class="stat-card"><span>Dispatched</span><strong id="reportDispatched">0</strong></div>
-    <div class="stat-card"><span>Delivered</span><strong id="reportDelivered">0</strong></div>
+
+    <div class="stat-card">
+      <span>Ready</span>
+      <strong id="reportReady">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Packed</span>
+      <strong id="reportPacked">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Dispatched</span>
+      <strong id="reportDispatched">0</strong>
+    </div>
+
+    <div class="stat-card">
+      <span>Delivered</span>
+      <strong id="reportDelivered">0</strong>
+    </div>
+
   </div>
+
 </section>
+
+
+<!-- LABEL -->
 
 <section id="labelSection" class="section hidden">
-  <div class="section-header"><h1>Shipment Label</h1></div>
-  <div id="label" class="label">
-    <h2>BARCODED PACKET</h2>
-    <p>Customer</p><strong id="labelCustomer"></strong>
-    <p>AWB NUMBER</p><strong id="labelAwb"></strong>
-    <svg id="barcode"></svg>
-    <p>PACKET ID</p><strong id="labelPacket"></strong>
-    <p>SCAN FOR SHIPMENT TRACKING</p>
-    <div id="qrcode"></div>
-    <p id="labelTracking" class="small"></p>
+
+  <div class="section-header">
+
+    <h1>Shipment Label</h1>
+
   </div>
-  <button onclick="window.print()">🖨️ Print Label</button>
+
+
+  <div id="label" class="label">
+
+    <h2>BARCODED PACKET</h2>
+
+    <p>Customer</p>
+
+    <strong id="labelCustomer"></strong>
+
+
+    <p>AWB NUMBER</p>
+
+    <strong id="labelAwb"></strong>
+
+
+    <svg id="barcode"></svg>
+
+
+    <p>PACKET ID</p>
+
+    <strong id="labelPacket"></strong>
+
+
+    <p>
+      SCAN FOR SHIPMENT TRACKING
+    </p>
+
+    <div id="qrcode"></div>
+
+    <p
+      id="labelTracking"
+      class="small"
+    ></p>
+
+  </div>
+
+
+  <button onclick="window.print()">
+    🖨️ Print Label
+  </button>
+
 </section>
 
+
 </main>
-</div>
+
 </div>
 
+</div>
+
+
 <script src="app.js"></script>
+
 </body>
 </html>
