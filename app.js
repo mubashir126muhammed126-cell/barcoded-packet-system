@@ -1,7 +1,6 @@
-// =====================================================
-// BARCODED PACKET SYSTEM
-// SUPABASE CONFIGURATION
-// =====================================================
+/* =========================================================
+   SUPABASE
+========================================================= */
 
 const SUPABASE_URL =
   "https://xmbabihlrguuqewgilfo.supabase.co";
@@ -9,102 +8,480 @@ const SUPABASE_URL =
 const SUPABASE_KEY =
   "sb_publishable_fOgnuaVOZB_4SWGgx1zd2g_QVY84nIH";
 
-
-// =====================================================
-// SUPABASE CLIENT
-// =====================================================
-
-const supabaseScript =
-  document.createElement("script");
-
-supabaseScript.src =
-  "https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2";
-
-supabaseScript.onload = function () {
-
-  window.supabaseClient =
-    window.supabase.createClient(
-      SUPABASE_URL,
-      SUPABASE_KEY
-    );
-
-  console.log(
-    "Supabase connected"
+const supabaseClient =
+  window.supabase.createClient(
+    SUPABASE_URL,
+    SUPABASE_KEY
   );
 
-  loadRecentScans();
 
-};
+/* =========================================================
+   GLOBALS
+========================================================= */
 
-document.head.appendChild(
-  supabaseScript
+let currentUser = null;
+let currentProfile = null;
+
+let html5QrCode = null;
+let awbScanner = null;
+
+let reportData = [];
+
+
+/* =========================================================
+   START
+========================================================= */
+
+document.addEventListener(
+  "DOMContentLoaded",
+  async () => {
+
+    const {
+      data: {
+        session
+      }
+    } =
+      await supabaseClient.auth.getSession();
+
+    if (session) {
+
+      currentUser =
+        session.user;
+
+      await loadProfile();
+
+    } else {
+
+      showLogin();
+
+    }
+
+  }
 );
 
 
-// =====================================================
-// MESSAGE
-// =====================================================
+/* =========================================================
+   AUTH
+========================================================= */
 
-function showMessage(
-  text,
-  type = "success"
-) {
+async function login() {
 
-  const box =
-    document.getElementById("message");
+  const email =
+    document
+      .getElementById("email")
+      .value
+      .trim();
 
-  box.style.display = "block";
+  const password =
+    document
+      .getElementById("password")
+      .value;
 
-  box.innerHTML = text;
+  if (!email || !password) {
 
-  if (type === "success") {
+    showMessage(
+      "loginMsg",
+      "Enter email and password.",
+      "error"
+    );
 
-    box.style.background = "#e5f8eb";
-    box.style.color = "#17652d";
+    return;
+  }
 
-  } else {
 
-    box.style.background = "#ffe5e5";
-    box.style.color = "#9d2020";
+  const {
+    data,
+    error
+  } =
+    await supabaseClient.auth.signInWithPassword({
+      email,
+      password
+    });
 
+
+  if (error) {
+
+    showMessage(
+      "loginMsg",
+      "❌ " + error.message,
+      "error"
+    );
+
+    return;
+  }
+
+
+  currentUser =
+    data.user;
+
+  await loadProfile();
+}
+
+
+async function logout() {
+
+  stopScanner();
+  stopAWBScanner();
+
+  await supabaseClient.auth.signOut();
+
+  currentUser = null;
+  currentProfile = null;
+
+  showLogin();
+}
+
+
+function showLogin() {
+
+  document
+    .getElementById("loginView")
+    .classList.remove("hidden");
+
+  document
+    .getElementById("appView")
+    .classList.add("hidden");
+}
+
+
+function showApp() {
+
+  document
+    .getElementById("loginView")
+    .classList.add("hidden");
+
+  document
+    .getElementById("appView")
+    .classList.remove("hidden");
+}
+
+
+/* =========================================================
+   PROFILE
+========================================================= */
+
+async function loadProfile() {
+
+  const {
+    data,
+    error
+  } =
+    await supabaseClient
+      .from("profiles")
+      .select("*")
+      .eq("id", currentUser.id)
+      .maybeSingle();
+
+
+  if (error || !data) {
+
+    alert(
+      "Your account has no profile. Contact administrator."
+    );
+
+    await supabaseClient.auth.signOut();
+
+    showLogin();
+
+    return;
+  }
+
+
+  currentProfile = data;
+
+  document
+    .getElementById("staffName")
+    .textContent =
+      `${data.full_name || "User"} • ${data.role}`;
+
+
+  applyRolePermissions();
+
+  showApp();
+}
+
+
+function applyRolePermissions() {
+
+  const admin =
+    currentProfile &&
+    currentProfile.role === "admin";
+
+
+  document
+    .querySelectorAll(".admin-only")
+    .forEach(element => {
+
+      if (admin) {
+
+        element.classList.remove("hidden");
+
+      } else {
+
+        element.classList.add("hidden");
+
+      }
+
+    });
+}
+
+
+/* =========================================================
+   TABS
+========================================================= */
+
+function showTab(tabName) {
+
+  if (
+    ["dashboard", "reports", "labels"]
+      .includes(tabName)
+    &&
+    currentProfile?.role !== "admin"
+  ) {
+
+    alert("Admin access required.");
+
+    return;
+  }
+
+
+  document
+    .querySelectorAll(".tab")
+    .forEach(section =>
+      section.classList.add("hidden")
+    );
+
+
+  const section =
+    document.getElementById(tabName);
+
+  if (section) {
+
+    section.classList.remove("hidden");
+
+  }
+
+
+  if (tabName === "history") {
+    loadMyScans();
+  }
+
+
+  if (tabName === "dashboard") {
+    loadDashboard();
+  }
+
+
+  if (tabName === "reports") {
+    loadReports();
   }
 
 }
 
 
-// =====================================================
-// FOCUS SCANNER
-// =====================================================
+/* =========================================================
+   QR SCANNER
+========================================================= */
 
-function focusAWB() {
+function startScanner() {
 
-  document
-    .getElementById("awb")
-    .focus();
+  if (html5QrCode) {
+    return;
+  }
+
+
+  html5QrCode =
+    new Html5Qrcode("reader");
+
+
+  html5QrCode.start(
+
+    {
+      facingMode: "environment"
+    },
+
+    {
+      fps: 10,
+
+      qrbox: {
+        width: 250,
+        height: 250
+      },
+
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.QR_CODE
+      ]
+    },
+
+    function(decodedText) {
+
+      document
+        .getElementById("packet")
+        .value = decodedText;
+
+
+      showMessage(
+        "scanMsg",
+        "✅ Packet QR scanned: " + decodedText,
+        "success"
+      );
+
+
+      stopScanner();
+
+    },
+
+    function() {}
+
+  )
+  .catch(function(error) {
+
+    showMessage(
+      "scanMsg",
+      "❌ Camera error: " + error,
+      "error"
+    );
+
+  });
+}
+
+
+function stopScanner() {
+
+  if (!html5QrCode) {
+    return;
+  }
+
+
+  html5QrCode
+    .stop()
+    .then(() => {
+
+      html5QrCode.clear();
+
+      html5QrCode = null;
+
+    })
+    .catch(error => {
+
+      console.log(error);
+
+      html5QrCode = null;
+
+    });
 
 }
 
 
-function focusPacket() {
+/* =========================================================
+   AWB BARCODE SCANNER
+========================================================= */
 
-  document
-    .getElementById("packet")
-    .focus();
+function startAWBScanner() {
+
+  if (awbScanner) {
+    return;
+  }
+
+
+  awbScanner =
+    new Html5Qrcode("awbReader");
+
+
+  awbScanner.start(
+
+    {
+      facingMode: "environment"
+    },
+
+    {
+      fps: 10,
+
+      qrbox: {
+        width: 300,
+        height: 120
+      },
+
+      formatsToSupport: [
+        Html5QrcodeSupportedFormats.CODE_128,
+        Html5QrcodeSupportedFormats.CODE_39,
+        Html5QrcodeSupportedFormats.EAN_13,
+        Html5QrcodeSupportedFormats.EAN_8
+      ]
+    },
+
+    function(decodedText) {
+
+      document
+        .getElementById("awb")
+        .value = decodedText;
+
+
+      showMessage(
+        "scanMsg",
+        "✅ AWB barcode scanned: " + decodedText,
+        "success"
+      );
+
+
+      stopAWBScanner();
+
+    },
+
+    function() {}
+
+  )
+  .catch(function(error) {
+
+    showMessage(
+      "scanMsg",
+      "❌ Unable to start AWB scanner.",
+      "error"
+    );
+
+  });
+}
+
+
+function stopAWBScanner() {
+
+  if (!awbScanner) {
+    return;
+  }
+
+
+  awbScanner
+    .stop()
+    .then(() => {
+
+      awbScanner.clear();
+
+      awbScanner = null;
+
+    })
+    .catch(error => {
+
+      console.log(error);
+
+      awbScanner = null;
+
+    });
 
 }
 
 
-// =====================================================
-// LINK PACKET
-// =====================================================
+/* =========================================================
+   SECURE VERIFY + LINK
+========================================================= */
 
-async function linkPacket() {
+async function verifyAndLink() {
 
   const awb =
     document
       .getElementById("awb")
       .value
       .trim();
+
 
   const packet =
     document
@@ -116,319 +493,377 @@ async function linkPacket() {
   if (!awb || !packet) {
 
     showMessage(
-      "⚠️ Please scan both AWB and Packet ID.",
+      "scanMsg",
+      "⚠️ Scan both AWB and Packet.",
       "error"
     );
 
     return;
-
-  }
-
-
-  if (!window.supabaseClient) {
-
-    showMessage(
-      "⚠️ Supabase is not ready.",
-      "error"
-    );
-
-    return;
-
   }
 
 
   showMessage(
-    "🔄 Checking AWB and Packet..."
+    "scanMsg",
+    "🔎 Verifying...",
+    "info"
   );
 
 
-  try {
-
-
-    // =================================================
-    // CHECK AWB
-    // =================================================
-
-    const {
-      data: order,
-      error: orderError
-
-    } = await window.supabaseClient
-
-      .from("orders")
-
-      .select("*")
-
-      .eq(
-        "awb_number",
-        awb
-      )
-
-      .maybeSingle();
-
-
-    if (orderError) {
-
-      console.error(orderError);
-
-      showMessage(
-        "❌ Error checking AWB.",
-        "error"
+  const {
+    data,
+    error
+  } =
+    await supabaseClient
+      .rpc(
+        "link_packet",
+        {
+          p_awb: awb,
+          p_packet: packet
+        }
       );
 
-      return;
+
+  if (error) {
+
+    let message =
+      error.message || "Verification failed.";
+
+
+    if (message.includes("AWB_NOT_FOUND")) {
+
+      message =
+        "❌ AWB not found.";
 
     }
 
-
-    if (!order) {
-
-      showMessage(
-        "❌ AWB number not found.",
-        "error"
-      );
-
-      return;
-
-    }
-
-
-    // =================================================
-    // CHECK PACKET
-    // =================================================
-
-    const {
-      data: packetData,
-      error: packetError
-
-    } = await window.supabaseClient
-
-      .from("packets")
-
-      .select("*")
-
-      .eq(
-        "packet_id",
-        packet
-      )
-
-      .maybeSingle();
-
-
-    if (packetError) {
-
-      console.error(packetError);
-
-      showMessage(
-        "❌ Error checking Packet ID.",
-        "error"
-      );
-
-      return;
-
-    }
-
-
-    if (!packetData) {
-
-      showMessage(
-        "❌ Packet ID not found.",
-        "error"
-      );
-
-      return;
-
-    }
-
-
-    // =================================================
-    // CHECK PACKET STATUS
-    // =================================================
-
-    if (
-      packetData.status !==
-      "available"
+    else if (
+      message.includes("PACKET_NOT_FOUND")
     ) {
 
-      showMessage(
-        "❌ This packet is already linked.",
-        "error"
-      );
-
-      return;
+      message =
+        "❌ Packet not found.";
 
     }
 
-
-    // =================================================
-    // CHECK AWB DUPLICATE
-    // =================================================
-
-    const {
-      data: previousScan,
-      error: previousError
-
-    } = await window.supabaseClient
-
-      .from("packet_scans")
-
-      .select("*")
-
-      .eq(
-        "awb_number",
-        awb
-      )
-
-      .limit(1);
-
-
-    if (previousError) {
-
-      console.error(previousError);
-
-      showMessage(
-        "❌ Error checking previous scans.",
-        "error"
-      );
-
-      return;
-
-    }
-
-
-    if (
-      previousScan &&
-      previousScan.length > 0
+    else if (
+      message.includes("PACKET_ALREADY_LINKED")
     ) {
 
-      showMessage(
-        "❌ This AWB is already linked.",
-        "error"
-      );
-
-      return;
+      message =
+        "❌ Packet is already linked.";
 
     }
 
+    else if (
+      message.includes("AWB_ALREADY_LINKED")
+    ) {
 
-    // =================================================
-    // INSERT SCAN
-    // =================================================
-
-    const {
-      error: scanError
-
-    } = await window.supabaseClient
-
-      .from("packet_scans")
-
-      .insert({
-
-        awb_number: awb,
-
-        packet_id: packet,
-
-        status: "linked"
-
-      });
-
-
-    if (scanError) {
-
-      console.error(scanError);
-
-      showMessage(
-        "❌ Could not save scan.",
-        "error"
-      );
-
-      return;
+      message =
+        "❌ AWB is already linked.";
 
     }
 
+    else if (
+      message.includes("LOGIN_REQUIRED")
+    ) {
 
-    // =================================================
-    // UPDATE PACKET
-    // =================================================
-
-    const {
-      error: updateError
-
-    } = await window.supabaseClient
-
-      .from("packets")
-
-      .update({
-
-        status: "linked"
-
-      })
-
-      .eq(
-        "packet_id",
-        packet
-      );
-
-
-    if (updateError) {
-
-      console.error(updateError);
-
-      showMessage(
-        "⚠️ Scan saved but packet status failed.",
-        "error"
-      );
-
-      return;
+      message =
+        "❌ Please login again.";
 
     }
 
-
-    // =================================================
-    // SUCCESS
-    // =================================================
 
     showMessage(
-      "✅ AWB and Packet successfully linked!",
-      "success"
-    );
-
-
-    document
-      .getElementById("awb")
-      .value = "";
-
-    document
-      .getElementById("packet")
-      .value = "";
-
-
-    loadRecentScans();
-
-
-  }
-
-  catch (error) {
-
-    console.error(error);
-
-    showMessage(
-      "❌ Unexpected error occurred.",
+      "scanMsg",
+      message,
       "error"
     );
 
+    return;
   }
 
+
+  showMessage(
+    "scanMsg",
+    "✅ VERIFIED & LINKED SUCCESSFULLY",
+    "success"
+  );
+
+
+  document
+    .getElementById("awb")
+    .value = "";
+
+
+  document
+    .getElementById("packet")
+    .value = "";
+
+
+  loadMyScans();
 }
 
 
-// =====================================================
-// RECENT SCANS
-// =====================================================
+/* =========================================================
+   MY SCANS
+========================================================= */
 
-async function loadRecentScans() {
+async function loadMyScans() {
 
-  if (!window.supabaseClient) {
+  const {
+    data,
+    error
+  } =
+    await supabaseClient
+      .from("packet_scans")
+      .select("*")
+      .eq("scanned_by", currentUser.id)
+      .order(
+        "scanned_at",
+        {
+          ascending: false
+        }
+      )
+      .limit(100);
+
+
+  const body =
+    document.getElementById("historyBody");
+
+
+  if (error) {
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="4">
+          ${error.message}
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+
+  if (!data || data.length === 0) {
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="4">
+          No scans yet.
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+
+  body.innerHTML =
+    data.map(row => `
+
+      <tr>
+
+        <td>
+          ${escapeHtml(row.awb_number)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.packet_id)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.status)}
+        </td>
+
+        <td>
+          ${new Date(
+            row.scanned_at
+          ).toLocaleString()}
+        </td>
+
+      </tr>
+
+    `).join("");
+}
+
+
+/* =========================================================
+   ADMIN DASHBOARD
+========================================================= */
+
+async function loadDashboard() {
+
+  if (currentProfile?.role !== "admin") {
+    return;
+  }
+
+
+  const orders =
+    await supabaseClient
+      .from("orders")
+      .select("*", {
+        count: "exact",
+        head: true
+      });
+
+
+  const packets =
+    await supabaseClient
+      .from("packets")
+      .select("*", {
+        count: "exact",
+        head: true
+      });
+
+
+  const linked =
+    await supabaseClient
+      .from("packets")
+      .select("*", {
+        count: "exact",
+        head: true
+      })
+      .eq("status", "linked");
+
+
+  const available =
+    await supabaseClient
+      .from("packets")
+      .select("*", {
+        count: "exact",
+        head: true
+      })
+      .eq("status", "available");
+
+
+  const scans =
+    await supabaseClient
+      .from("packet_scans")
+      .select("*", {
+        count: "exact",
+        head: true
+      });
+
+
+  document
+    .getElementById("totalOrders")
+    .textContent =
+      orders.count || 0;
+
+
+  document
+    .getElementById("totalPackets")
+    .textContent =
+      packets.count || 0;
+
+
+  document
+    .getElementById("linkedPackets")
+    .textContent =
+      linked.count || 0;
+
+
+  document
+    .getElementById("availablePackets")
+    .textContent =
+      available.count || 0;
+
+
+  document
+    .getElementById("totalScans")
+    .textContent =
+      scans.count || 0;
+
+
+  const {
+    data,
+    error
+  } =
+    await supabaseClient
+      .from("packet_scans")
+      .select("*")
+      .order(
+        "scanned_at",
+        {
+          ascending: false
+        }
+      )
+      .limit(20);
+
+
+  const body =
+    document.getElementById("dashboardBody");
+
+
+  if (error) {
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="5">
+          ${error.message}
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+
+  if (!data || data.length === 0) {
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="5">
+          No scans.
+        </td>
+      </tr>
+    `;
+
+    return;
+  }
+
+
+  body.innerHTML =
+    data.map(row => `
+
+      <tr>
+
+        <td>
+          ${escapeHtml(row.awb_number)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.packet_id)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.status)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.scanned_by || "-")}
+        </td>
+
+        <td>
+          ${new Date(
+            row.scanned_at
+          ).toLocaleString()}
+        </td>
+
+      </tr>
+
+    `).join("");
+}
+
+
+/* =========================================================
+   REPORTS
+========================================================= */
+
+async function loadReports() {
+
+  if (currentProfile?.role !== "admin") {
     return;
   }
 
@@ -436,115 +871,286 @@ async function loadRecentScans() {
   const {
     data,
     error
+  } =
+    await supabaseClient
+      .from("packet_scans")
+      .select("*")
+      .order(
+        "scanned_at",
+        {
+          ascending: false
+        }
+      );
 
-  } = await window.supabaseClient
 
-    .from("packet_scans")
-
-    .select("*")
-
-    .order(
-      "scanned_at",
-      {
-        ascending: false
-      }
-    )
-
-    .limit(20);
+  const body =
+    document.getElementById("reportsBody");
 
 
   if (error) {
 
-    console.error(error);
-
-    return;
-
-  }
-
-
-  const body =
-    document.getElementById(
-      "historyBody"
-    );
-
-
-  if (
-    !data ||
-    data.length === 0
-  ) {
-
     body.innerHTML = `
       <tr>
-        <td colspan="4">
-          No scans yet
+        <td colspan="5">
+          ${error.message}
         </td>
       </tr>
     `;
 
     return;
+  }
 
+
+  reportData =
+    data || [];
+
+
+  if (!reportData.length) {
+
+    body.innerHTML = `
+      <tr>
+        <td colspan="5">
+          No reports.
+        </td>
+      </tr>
+    `;
+
+    return;
   }
 
 
   body.innerHTML =
-    data.map(scan => `
+    reportData.map(row => `
 
       <tr>
 
         <td>
-          ${scan.awb_number}
+          ${escapeHtml(row.awb_number)}
         </td>
 
         <td>
-          ${scan.packet_id}
+          ${escapeHtml(row.packet_id)}
         </td>
 
         <td>
-          ${scan.status}
+          ${escapeHtml(row.status)}
+        </td>
+
+        <td>
+          ${escapeHtml(row.scanned_by || "-")}
         </td>
 
         <td>
           ${new Date(
-            scan.scanned_at
+            row.scanned_at
           ).toLocaleString()}
         </td>
 
       </tr>
 
     `).join("");
-
 }
 
 
-// =====================================================
-// ENTER KEY
-// =====================================================
+/* =========================================================
+   CSV
+========================================================= */
 
-document.addEventListener(
-  "keydown",
-  function (event) {
+function exportCSV() {
 
-    if (
-      event.key === "Enter"
-    ) {
+  if (!reportData.length) {
 
-      const active =
-        document.activeElement;
+    alert("No report data.");
 
-
-      if (
-        active &&
-        (
-          active.id === "awb" ||
-          active.id === "packet"
-        )
-      ) {
-
-        linkPacket();
-
-      }
-
-    }
-
+    return;
   }
-);
+
+
+  const headers = [
+    "AWB",
+    "Packet ID",
+    "Status",
+    "Staff ID",
+    "Scanned At"
+  ];
+
+
+  const rows =
+    reportData.map(row => [
+
+      row.awb_number,
+      row.packet_id,
+      row.status,
+      row.scanned_by || "",
+      row.scanned_at
+
+    ]);
+
+
+  const csv =
+    [
+      headers,
+      ...rows
+    ]
+      .map(row =>
+        row.map(value =>
+          `"${String(value)
+            .replace(/"/g, '""')}"`
+        ).join(",")
+      )
+      .join("\n");
+
+
+  const blob =
+    new Blob(
+      [csv],
+      {
+        type: "text/csv;charset=utf-8;"
+      }
+    );
+
+
+  const url =
+    URL.createObjectURL(blob);
+
+
+  const link =
+    document.createElement("a");
+
+
+  link.href = url;
+
+  link.download =
+    "packet-scan-report.csv";
+
+
+  document.body.appendChild(link);
+
+  link.click();
+
+  link.remove();
+
+
+  URL.revokeObjectURL(url);
+}
+
+
+/* =========================================================
+   LABEL GENERATOR
+========================================================= */
+
+function generateLabel() {
+
+  const awb =
+    document
+      .getElementById("labelAwb")
+      .value
+      .trim();
+
+
+  const packet =
+    document
+      .getElementById("labelPacket")
+      .value
+      .trim();
+
+
+  if (!awb || !packet) {
+
+    alert(
+      "Enter AWB and Packet ID."
+    );
+
+    return;
+  }
+
+
+  document
+    .getElementById("labelAwbText")
+    .textContent = awb;
+
+
+  document
+    .getElementById("labelPacketText")
+    .textContent = packet;
+
+
+  const qrBox =
+    document.getElementById("qrcode");
+
+
+  qrBox.innerHTML = "";
+
+
+  new QRCode(
+    qrBox,
+    {
+      text: packet,
+      width: 160,
+      height: 160
+    }
+  );
+
+
+  JsBarcode(
+    "#awbBarcode",
+    awb,
+    {
+      format: "CODE128",
+      width: 2,
+      height: 70,
+      displayValue: true
+    }
+  );
+}
+
+
+/* =========================================================
+   MESSAGE
+========================================================= */
+
+function showMessage(
+  elementId,
+  message,
+  type
+) {
+
+  const element =
+    document.getElementById(elementId);
+
+
+  if (!element) {
+    return;
+  }
+
+
+  element.textContent =
+    message;
+
+
+  element.style.background =
+    type === "success"
+      ? "#dcfce7"
+      : type === "info"
+      ? "#dbeafe"
+      : "#fee2e2";
+
+
+  element.style.color =
+    "#111827";
+}
+
+
+/* =========================================================
+   HTML SAFETY
+========================================================= */
+
+function escapeHtml(value) {
+
+  return String(value)
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#039;");
+    }
