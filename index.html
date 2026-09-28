@@ -14,157 +14,378 @@
 
   <link rel="stylesheet" href="style.css">
 
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+
+  <script src="https://unpkg.com/html5-qrcode"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/qrcodejs@1.0.0/qrcode.min.js"></script>
+
+  <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
+
 </head>
+
 
 <body>
 
-  <header class="header">
+<!-- =====================================================
+LOGIN
+===================================================== -->
+
+<div id="loginView" class="login-container">
+
+  <div class="login-card">
+
+    <h1>📦 Packet System</h1>
+
+    <p>Staff Login</p>
+
+    <input
+      id="email"
+      type="email"
+      placeholder="Email"
+    >
+
+    <input
+      id="password"
+      type="password"
+      placeholder="Password"
+    >
+
+    <button onclick="login()">
+      🔐 Login
+    </button>
+
+    <div id="loginMsg"></div>
+
+  </div>
+
+</div>
+
+
+<!-- =====================================================
+APP
+===================================================== -->
+
+<div id="appView" class="hidden">
+
+  <header>
 
     <div>
-      <h2>Barcoded Packet System</h2>
-      <p>AWB & Packet Verification</p>
+      <h1>📦 Barcoded Packet System</h1>
+      <span id="staffName"></span>
     </div>
+
+    <button onclick="logout()">
+      Logout
+    </button>
 
   </header>
 
 
-  <main class="container">
+  <!-- NAVIGATION -->
 
-    <section class="card">
+  <nav>
 
-      <h1>Barcoded Packet Scan</h1>
+    <button onclick="showTab('scanner')">
+      📷 Scanner
+    </button>
 
-      <p class="subtitle">
-        Link an AWB with its unique packet before shipment.
-      </p>
+    <button onclick="showTab('history')">
+      📋 My Scans
+    </button>
 
+    <button
+      id="dashboardBtn"
+      class="admin-only"
+      onclick="showTab('dashboard')"
+    >
+      📊 Dashboard
+    </button>
 
-      <!-- AWB -->
+    <button
+      id="reportsBtn"
+      class="admin-only"
+      onclick="showTab('reports')"
+    >
+      📈 Reports
+    </button>
 
-      <div class="input-group">
+    <button
+      id="labelsBtn"
+      class="admin-only"
+      onclick="showTab('labels')"
+    >
+      🖨️ Labels
+    </button>
 
-        <label for="awb">
-          Step 1 — AWB Number
-        </label>
-
-        <div class="input-row">
-
-          <input
-            id="awb"
-            type="text"
-            placeholder="Scan or enter AWB number"
-            autocomplete="off"
-          >
-
-          <button
-            class="scan-button"
-            onclick="focusAWB()"
-          >
-            Scan
-          </button>
-
-        </div>
-
-      </div>
-
-
-      <!-- PACKET -->
-
-      <div class="input-group">
-
-        <label for="packet">
-          Step 2 — Packet ID
-        </label>
-
-        <div class="input-row">
-
-          <input
-            id="packet"
-            type="text"
-            placeholder="Scan or enter Packet ID"
-            autocomplete="off"
-          >
-
-          <button
-            class="scan-button"
-            onclick="focusPacket()"
-          >
-            Scan
-          </button>
-
-        </div>
-
-      </div>
+  </nav>
 
 
-      <!-- SUBMIT -->
+  <!-- =================================================
+  SCANNER
+  ================================================= -->
 
-      <button
-        class="submit-button"
-        onclick="linkPacket()"
+  <section id="scanner" class="tab">
+
+    <h2>🔎 Packet Linking</h2>
+
+
+    <div class="card">
+
+      <label>AWB Number</label>
+
+      <input
+        id="awb"
+        placeholder="Scan or enter AWB"
       >
-        SCAN & SUBMIT
+
+      <div id="awbReader"></div>
+
+      <button onclick="startAWBScanner()">
+        📷 Scan AWB Barcode
       </button>
 
+      <button onclick="stopAWBScanner()">
+        Stop AWB Scanner
+      </button>
 
-      <!-- STATUS -->
-
-      <div
-        id="message"
-        class="message"
-      ></div>
+    </div>
 
 
-      <!-- RECENT SCANS -->
+    <div class="card">
 
-      <div class="history">
+      <label>Packet ID</label>
 
-        <h2>Recent Scans</h2>
+      <input
+        id="packet"
+        placeholder="Scan or enter Packet ID"
+      >
 
-        <button
-          class="refresh-button"
-          onclick="loadRecentScans()"
-        >
-          Refresh
-        </button>
+      <div id="reader"></div>
 
-        <div class="table-container">
+      <button onclick="startScanner()">
+        🔲 Scan Packet QR
+      </button>
 
-          <table>
+      <button onclick="stopScanner()">
+        Stop QR Scanner
+      </button>
 
-            <thead>
+    </div>
 
-              <tr>
-                <th>AWB</th>
-                <th>Packet</th>
-                <th>Status</th>
-                <th>Time</th>
-              </tr>
 
-            </thead>
+    <button
+      class="verify-button"
+      onclick="verifyAndLink()"
+    >
+      🔎 VERIFY & LINK
+    </button>
 
-            <tbody id="historyBody">
+    <div id="scanMsg"></div>
 
-              <tr>
-                <td colspan="4">
-                  No scans yet
-                </td>
-              </tr>
+  </section>
 
-            </tbody>
 
-          </table>
+  <!-- =================================================
+  MY SCANS
+  ================================================= -->
 
-        </div>
+  <section id="history" class="tab hidden">
 
+    <h2>📋 My Scans</h2>
+
+    <button onclick="loadMyScans()">
+      🔄 Refresh
+    </button>
+
+    <div class="card">
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>AWB</th>
+            <th>Packet</th>
+            <th>Status</th>
+            <th>Date</th>
+          </tr>
+
+        </thead>
+
+        <tbody id="historyBody"></tbody>
+
+      </table>
+
+    </div>
+
+  </section>
+
+
+  <!-- =================================================
+  ADMIN DASHBOARD
+  ================================================= -->
+
+  <section id="dashboard" class="tab hidden admin-only">
+
+    <h2>📊 Admin Dashboard</h2>
+
+    <div class="stats-grid">
+
+      <div class="stat-card">
+        <h3>Total Orders</h3>
+        <p id="totalOrders">0</p>
       </div>
 
-    </section>
+      <div class="stat-card">
+        <h3>Total Packets</h3>
+        <p id="totalPackets">0</p>
+      </div>
 
-  </main>
+      <div class="stat-card">
+        <h3>Linked Packets</h3>
+        <p id="linkedPackets">0</p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Available Packets</h3>
+        <p id="availablePackets">0</p>
+      </div>
+
+      <div class="stat-card">
+        <h3>Total Scans</h3>
+        <p id="totalScans">0</p>
+      </div>
+
+    </div>
 
 
-  <script src="app.js"></script>
+    <div class="card">
+
+      <h3>Recent Scans</h3>
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>AWB</th>
+            <th>Packet</th>
+            <th>Status</th>
+            <th>Staff</th>
+            <th>Date</th>
+          </tr>
+
+        </thead>
+
+        <tbody id="dashboardBody"></tbody>
+
+      </table>
+
+    </div>
+
+  </section>
+
+
+  <!-- =================================================
+  REPORTS
+  ================================================= -->
+
+  <section id="reports" class="tab hidden admin-only">
+
+    <h2>📈 Reports</h2>
+
+    <button onclick="loadReports()">
+      🔄 Refresh
+    </button>
+
+    <button onclick="exportCSV()">
+      📥 Export CSV
+    </button>
+
+    <div class="card">
+
+      <table>
+
+        <thead>
+
+          <tr>
+            <th>AWB</th>
+            <th>Packet</th>
+            <th>Status</th>
+            <th>Staff</th>
+            <th>Date</th>
+          </tr>
+
+        </thead>
+
+        <tbody id="reportsBody"></tbody>
+
+      </table>
+
+    </div>
+
+  </section>
+
+
+  <!-- =================================================
+  LABEL GENERATOR
+  ================================================= -->
+
+  <section id="labels" class="tab hidden admin-only">
+
+    <h2>🖨️ Packet Label Generator</h2>
+
+    <div class="card">
+
+      <input
+        id="labelAwb"
+        placeholder="AWB Number"
+      >
+
+      <input
+        id="labelPacket"
+        placeholder="Packet ID"
+      >
+
+      <button onclick="generateLabel()">
+        Generate Label
+      </button>
+
+    </div>
+
+
+    <div id="printArea" class="print-area">
+
+      <h2>PACKET LABEL</h2>
+
+      <p>
+        <strong>AWB:</strong>
+        <span id="labelAwbText"></span>
+      </p>
+
+      <p>
+        <strong>Packet:</strong>
+        <span id="labelPacketText"></span>
+      </p>
+
+      <div id="qrcode"></div>
+
+      <svg id="awbBarcode"></svg>
+
+    </div>
+
+
+    <button onclick="window.print()">
+      🖨️ Print Label
+    </button>
+
+  </section>
+
+</div>
+
+
+<script src="app.js"></script>
 
 </body>
 
