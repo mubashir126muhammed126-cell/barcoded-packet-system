@@ -1,19 +1,32 @@
 <!DOCTYPE html>
 <html lang="en">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
-  <title>Barcoded Packet Scan</title>
+<head>
+
+  <meta charset="UTF-8">
+
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0"
+  >
+
+  <title>Barcoded Packet System</title>
 
   <link rel="stylesheet" href="style.css">
+
 </head>
 
 <body>
 
-  <header>
-    <h2>Barcoded Packet System</h2>
+  <header class="header">
+
+    <div>
+      <h2>Barcoded Packet System</h2>
+      <p>AWB & Packet Verification</p>
+    </div>
+
   </header>
+
 
   <main class="container">
 
@@ -21,41 +34,138 @@
 
       <h1>Barcoded Packet Scan</h1>
 
-      <p>
-        Link an AWB with its unique packet QR before shipment.
+      <p class="subtitle">
+        Link an AWB with its unique packet before shipment.
       </p>
 
-      <div class="input-group">
-        <label>Step 1 — AWB Number</label>
 
-        <input
-          type="text"
-          id="awb"
-          placeholder="Scan or enter AWB number"
-        >
-      </div>
+      <!-- AWB -->
 
       <div class="input-group">
-        <label>Step 2 — Packet ID</label>
 
-        <input
-          type="text"
-          id="packet"
-          placeholder="Scan or enter Packet ID"
-        >
+        <label for="awb">
+          Step 1 — AWB Number
+        </label>
+
+        <div class="input-row">
+
+          <input
+            id="awb"
+            type="text"
+            placeholder="Scan or enter AWB number"
+            autocomplete="off"
+          >
+
+          <button
+            class="scan-button"
+            onclick="focusAWB()"
+          >
+            Scan
+          </button>
+
+        </div>
+
       </div>
 
-      <button onclick="linkPacket()">
+
+      <!-- PACKET -->
+
+      <div class="input-group">
+
+        <label for="packet">
+          Step 2 — Packet ID
+        </label>
+
+        <div class="input-row">
+
+          <input
+            id="packet"
+            type="text"
+            placeholder="Scan or enter Packet ID"
+            autocomplete="off"
+          >
+
+          <button
+            class="scan-button"
+            onclick="focusPacket()"
+          >
+            Scan
+          </button>
+
+        </div>
+
+      </div>
+
+
+      <!-- SUBMIT -->
+
+      <button
+        class="submit-button"
+        onclick="linkPacket()"
+      >
         SCAN & SUBMIT
       </button>
 
-      <div id="message"></div>
+
+      <!-- STATUS -->
+
+      <div
+        id="message"
+        class="message"
+      ></div>
+
+
+      <!-- RECENT SCANS -->
+
+      <div class="history">
+
+        <h2>Recent Scans</h2>
+
+        <button
+          class="refresh-button"
+          onclick="loadRecentScans()"
+        >
+          Refresh
+        </button>
+
+        <div class="table-container">
+
+          <table>
+
+            <thead>
+
+              <tr>
+                <th>AWB</th>
+                <th>Packet</th>
+                <th>Status</th>
+                <th>Time</th>
+              </tr>
+
+            </thead>
+
+            <tbody id="historyBody">
+
+              <tr>
+                <td colspan="4">
+                  No scans yet
+                </td>
+              </tr>
+
+            </tbody>
+
+          </table>
+
+        </div>
+
+      </div>
 
     </section>
 
   </main>
 
+
   <script src="app.js"></script>
 
 </body>
+
 </html>
