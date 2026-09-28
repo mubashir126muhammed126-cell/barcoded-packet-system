@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+  <title>Barcoded Packet Scan</title>
+
+  <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+  <header>
+    <h2>Barcoded Packet System</h2>
+  </header>
+
+  <main class="container">
+
+    <section class="card">
+
+      <h1>Barcoded Packet Scan</h1>
+
+      <p>
+        Link an AWB with its unique packet QR before shipment.
+      </p>
+
+      <div class="input-group">
+        <label>Step 1 — AWB Number</label>
+
+        <input
+          type="text"
+          id="awb"
+          placeholder="Scan or enter AWB number"
+        >
+      </div>
+
+      <div class="input-group">
+        <label>Step 2 — Packet ID</label>
+
+        <input
+          type="text"
+          id="packet"
+          placeholder="Scan or enter Packet ID"
+        >
+      </div>
+
+      <button onclick="linkPacket()">
+        SCAN & SUBMIT
+      </button>
+
+      <div id="message"></div>
+
+    </section>
+
+  </main>
+
+  <script src="app.js"></script>
+
+</body>
+</html>
