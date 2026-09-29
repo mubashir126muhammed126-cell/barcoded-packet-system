@@ -1,0 +1,38 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Track Shipment</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+<div class="page">
+  <div class="login-card tracking-public">
+    <h1>📦 Track Shipment</h1>
+    <p class="muted">Enter your AWB number or scan the QR code on your packet.</p>
+    <input id="awb" placeholder="AWB Number">
+    <button onclick="track()">Track Shipment</button>
+    <div id="result"></div>
+  </div>
+</div>
+<script>
+const SUPABASE_URL="https://xmbabihlrguuqewgilfo.supabase.co";
+const SUPABASE_KEY="PASTE-YOUR_SUPABASE_PUBLISHABLE_KEY_HERE";
+const db=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+function esc(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
+function date(v){return v?new Date(v).toLocaleString():"-"}
+async function track(){
+ const awb=document.getElementById("awb").value.trim();
+ const r=document.getElementById("result");
+ if(!awb){r.innerHTML="<p class='error'>Enter an AWB number.</p>";return}
+ r.innerHTML="<p>Checking shipment...</p>";
+ const {data,error}=await db.rpc("public_track_shipment",{p_awb:awb});
+ if(error||!data){r.innerHTML="<div class='card'><p class='error'>Shipment not found.</p></div>";return}
+ r.innerHTML=`<div class="card"><h2>Shipment Found</h2><p><strong>AWB:</strong> ${esc(data.awb_number)}</p><p><strong>Customer:</strong> ${esc(data.customer_name||"-")}</p><p><strong>Status:</strong> <span class="status">${esc(data.status)}</span></p><p><strong>Packet:</strong> ${esc(data.packet_id||"Processing")}</p><p><strong>Created:</strong> ${date(data.created_at)}</p></div>`;
+}
+const params=new URLSearchParams(location.search);const awb=params.get("awb");if(awb){document.getElementById("awb").value=awb;track()}
+</script>
+</body>
+</html>
