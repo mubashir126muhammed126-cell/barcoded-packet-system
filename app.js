@@ -84,13 +84,124 @@ async function startScanner(){
  try{await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:280,height:180}},decodedText=>handleScan(decodedText),()=>{})}
  catch(e){showMessage("scanResult","Camera error: "+e,false)}
 }
-function handleScan(value){
- value=value.trim();
- if(value.startsWith("AWB-"))document.getElementById("scanAwb").value=value;
- else if(value.startsWith("PKT-"))document.getElementById("scanPacket").value=value;
- else{
-   try{const u=new URL(value);const awb=u.searchParams.get("awb");if(awb)document.getElementById("scanAwb").value=awb;else document.getElementById("scanPacket").value=value}catch{document.getElementById("scanPacket").value=value}
- }
+function handleScan(value) {
+
+  value = value.trim();
+
+  console.log("SCANNED:", value);
+
+  // --------------------------------
+  // AWB BARCODE
+  // --------------------------------
+
+  if (value.startsWith("AWB-")) {
+
+    document.getElementById("scanAwb").value = value;
+
+    showMessage(
+      "scanResult",
+      "✓ AWB scanned: " + value,
+      true
+    );
+
+    return;
+  }
+
+
+  // --------------------------------
+  // PACKET ID
+  // --------------------------------
+
+  if (value.startsWith("PKT-")) {
+
+    document.getElementById("scanPacket").value = value;
+
+    showMessage(
+      "scanResult",
+      "✓ Packet ID scanned: " + value,
+      true
+    );
+
+    return;
+  }
+
+
+  // --------------------------------
+  // CUSTOMER TRACKING QR
+  // --------------------------------
+
+  try {
+
+    const url = new URL(value);
+
+    const awb =
+      url.searchParams.get("awb");
+
+    const packet =
+      url.searchParams.get("packet");
+
+
+    if (awb) {
+
+      document.getElementById(
+        "scanAwb"
+      ).value = awb;
+
+    }
+
+
+    if (packet) {
+
+      document.getElementById(
+        "scanPacket"
+      ).value = packet;
+
+    }
+
+
+    if (awb && packet) {
+
+      showMessage(
+        "scanResult",
+        "✓ AWB + Packet ID scanned successfully",
+        true
+      );
+
+      return;
+    }
+
+
+    if (awb) {
+
+      showMessage(
+        "scanResult",
+        "✓ AWB scanned. Scan the Packet QR/barcode.",
+        true
+      );
+
+      return;
+    }
+
+  } catch (error) {
+
+    console.log(
+      "Not a tracking URL"
+    );
+
+  }
+
+
+  // --------------------------------
+  // UNKNOWN CODE
+  // --------------------------------
+
+  showMessage(
+    "scanResult",
+    "Unknown barcode / QR code.",
+    false
+  );
+
+}
 }
 async function verifyAndLink(){
  const awb=document.getElementById("scanAwb").value.trim(),packet=document.getElementById("scanPacket").value.trim();
@@ -112,18 +223,149 @@ async function loadReports(){
  const {data,error}=await client.from("orders").select("status");if(error)return;const c=s=>data.filter(x=>x.status===s).length;
  document.getElementById("reportReady").textContent=c("ready");document.getElementById("reportPacked").textContent=c("packed");document.getElementById("reportDispatched").textContent=c("dispatched");document.getElementById("reportDelivered").textContent=c("delivered");
 }
-function getTrackingUrl(awb){return new URL(`track.html?awb=${encodeURIComponent(awb)}`,window.location.href).href}
-function generateLabel(){
- if(!latestShipment){alert("Create or select a shipment first.");return}
- document.getElementById("labelCustomer").textContent=latestShipment.customer_name||"";
- document.getElementById("labelAwb").textContent=latestShipment.awb_number;
- document.getElementById("labelPacket").textContent=latestShipment.packet_id||"Not linked";
- document.getElementById("qrcode").innerHTML="";
- new QRCode(document.getElementById("qrcode"),{text:getTrackingUrl(latestShipment.awb_number),width:150,height:150});
- JsBarcode("#barcode",latestShipment.awb_number,{format:"CODE128",width:2,height:65,displayValue:true,margin:10});
- showSection("labelSection");
+function getTrackingUrl(awb, packet) {
+
+  const url =
+    new URL(
+      "track.html",
+      window.location.href
+    );
+
+  url.searchParams.set(
+    "awb",
+    awb
+  );
+
+  if (packet) {
+
+    url.searchParams.set(
+      "packet",
+      packet
+    );
+
+  }
+
+  return url.href;
 }
-function openCustomerTracking(){if(!latestShipment)return;window.open(getTrackingUrl(latestShipment.awb_number),"_blank")}
+function generateLabel() {
+
+  if (!latestShipment) {
+
+    alert(
+      "Create or select a shipment first."
+    );
+
+    return;
+  }
+
+
+  const awb =
+    latestShipment.awb_number;
+
+  const packet =
+    latestShipment.packet_id;
+
+
+  // Customer name
+
+  document.getElementById(
+    "labelCustomer"
+  ).textContent =
+    latestShipment.customer_name || "";
+
+
+  // AWB
+
+  document.getElementById(
+    "labelAwb"
+  ).textContent =
+    awb;
+
+
+  // Packet
+
+  document.getElementById(
+    "labelPacket"
+  ).textContent =
+    packet || "Not linked";
+
+
+  // Clear previous QR
+
+  document.getElementById(
+    "qrcode"
+  ).innerHTML = "";
+
+
+  // --------------------------------
+  // QR CONTAINS BOTH AWB + PACKET
+  // --------------------------------
+
+  const trackingUrl =
+    getTrackingUrl(
+      awb,
+      packet
+    );
+
+
+  new QRCode(
+    document.getElementById("qrcode"),
+    {
+      text: trackingUrl,
+      width: 180,
+      height: 180,
+      correctLevel: QRCode.CorrectLevel.M
+    }
+  );
+
+
+  // --------------------------------
+  // AWB CODE128 BARCODE
+  // --------------------------------
+
+  JsBarcode(
+    "#barcode",
+    awb,
+    {
+      format: "CODE128",
+      width: 2,
+      height: 70,
+      displayValue: true,
+      margin: 10
+    }
+  );
+
+
+  showSection(
+    "labelSection"
+  );
+
+}
+function openCustomerTracking() {
+
+  if (!latestShipment) {
+
+    alert(
+      "Create or select a shipment first."
+    );
+
+    return;
+  }
+
+
+  const url =
+    getTrackingUrl(
+      latestShipment.awb_number,
+      latestShipment.packet_id
+    );
+
+
+  window.open(
+    url,
+    "_blank"
+  );
+
+}
 function showMessage(id,msg,success){const e=document.getElementById(id);e.textContent=msg;e.className=success?"message success":"message error"}
 function formatDate(d){return d?new Date(d).toLocaleString():"-"}
 function escapeHtml(v){return String(v??"").replaceAll("&","&amp;").replaceAll("<","&lt;").replaceAll(">","&gt;").replaceAll('"',"&quot;").replaceAll("'","&#039;")}
