@@ -1,14 +1,73 @@
-const SUPABASE_URL="https://xmbabihlrguuqewgilfo.supabase.co";
+const SUPABASE_URL = "https://xmbabihlrguuqewgilfo.supabase.co";
 const SUPABASE_KEY="sb_publishable_fOgnuaVOZB_4SWGgx1zd2g_QVY84nIH";
 const client=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let currentUser=null,currentProfile=null,scanner=null,latestShipment=null;
 
-async function login(){
- const email=document.getElementById("email").value.trim(),password=document.getElementById("password").value;
- const m=document.getElementById("loginMessage");m.textContent="Logging in...";m.className="message";
- const {error}=await client.auth.signInWithPassword({email,password});
- if(error){m.textContent=error.message;m.className="message error";return}
- await loadUser();
+async function login() {
+
+  const email =
+    document.getElementById("email").value.trim();
+
+  const password =
+    document.getElementById("password").value;
+
+  const message =
+    document.getElementById("loginMessage");
+
+  message.textContent = "Logging in...";
+  message.className = "message";
+
+  if (!email || !password) {
+    message.textContent =
+      "Enter email and password.";
+    message.className =
+      "message error";
+    return;
+  }
+
+  try {
+
+    const { data, error } =
+      await client.auth.signInWithPassword({
+        email: email,
+        password: password
+      });
+
+    if (error) {
+      console.error(error);
+
+      message.textContent =
+        error.message;
+
+      message.className =
+        "message error";
+
+      return;
+    }
+
+    if (!data || !data.user) {
+      message.textContent =
+        "Login failed. User not returned.";
+
+      message.className =
+        "message error";
+
+      return;
+    }
+
+    await loadUser();
+
+  } catch (error) {
+
+    console.error(error);
+
+    message.textContent =
+      "Login error: " + error.message;
+
+    message.className =
+      "message error";
+  }
+}
 }
 async function loadUser(){
  const {data:{user}}=await client.auth.getUser();
