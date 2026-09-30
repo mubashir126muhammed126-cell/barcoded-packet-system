@@ -3,7 +3,7 @@ const SUPABASE_KEY="sb_publishable_fOgnuaVOZB_4SWGgx1zd2g_QVY84nIH";
 const client=supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
 let currentUser=null,currentProfile=null,scanner=null,latestShipment=null;
 
-async function login() {
+async function login() 
 
   const email =
     document.getElementById("email").value.trim();
@@ -143,7 +143,7 @@ async function startScanner(){
  try{await scanner.start({facingMode:"environment"},{fps:10,qrbox:{width:280,height:180}},decodedText=>handleScan(decodedText),()=>{})}
  catch(e){showMessage("scanResult","Camera error: "+e,false)}
 }
-function handleScan(value) {
+function handleScan(value) 
 
   value = value.trim();
 
